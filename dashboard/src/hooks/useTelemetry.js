@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 
-const DATA_URL = 'https://raw.githubusercontent.com/TheFinley/raspberrypi-tempurature/main/data/recent_temp.json'
+const DATA_URL = 'https://raw.githubusercontent.com/TheFinley/raspberrypi-temperature/main/data/recent_temp.json'
 const POLL_MS  = 5 * 60 * 1000  // 5 minutes — matches Pi cron cadence
 
 export function useTelemetry() {
