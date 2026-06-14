@@ -1,67 +1,68 @@
 import { useEffect, useState } from 'react'
+import DashboardLayout from './layouts/DashboardLayout.jsx'
+import DashboardHeader from './components/DashboardHeader.jsx'
+import MetricsGrid from './components/MetricsGrid.jsx'
+import MetricCard from './components/MetricCard.jsx'
+import AnalyticsContainer from './components/AnalyticsContainer.jsx'
+
+function getTempStatus(temp) {
+  if (temp > 30) return 'critical'
+  if (temp > 27) return 'warning'
+  return 'nominal'
+}
+
+function timeSince(dateStr) {
+  const d = new Date(dateStr.replace(/\//g, '-').replace(' ', 'T'))
+  const mins = Math.round((Date.now() - d) / 60000)
+  if (mins < 1) return 'just now'
+  if (mins === 1) return '1 min ago'
+  return `${mins} mins ago`
+}
 
 function App() {
   const [data, setData] = useState(null)
   const [status, setStatus] = useState('loading')
 
   useEffect(() => {
-    fetch('/mock_recent_temp.json')
+    fetch(`/mock_recent_temp.json?t=${Date.now()}`)
       .then(res => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
         return res.json()
       })
-      .then(json => {
-        setData(json)
-        setStatus('ok')
-      })
+      .then(json => { setData(json); setStatus('ok') })
       .catch(() => setStatus('error'))
   }, [])
 
-  const badge = status === 'ok' ? 'badge-ok' : status === 'error' ? 'badge-error' : 'badge-loading'
-  const label = status === 'ok' ? 'Mock data loaded' : status === 'error' ? 'Load failed' : 'Loading…'
+  if (status === 'loading') return <div className="app-loading">Loading telemetry…</div>
+  if (status === 'error')   return <div className="app-error">Failed to load telemetry data.</div>
+
+  const [datePart, timePart] = data.last_updated.split(' ')
 
   return (
-    <div className="app">
-      <h1>Pi Telemetry Dashboard</h1>
-
-      <div className="sandbox-status">
-        <h2>Milestone 1 — Sandbox Verification</h2>
-        <table>
-          <tbody>
-            <tr>
-              <td>Data source</td>
-              <td>/mock_recent_temp.json</td>
-            </tr>
-            <tr>
-              <td>Status</td>
-              <td><span className={`badge ${badge}`}>{label}</span></td>
-            </tr>
-            {data && <>
-              <tr>
-                <td>Data points</td>
-                <td>{data.values.length} hourly readings (30 days)</td>
-              </tr>
-              <tr>
-                <td>Current temp</td>
-                <td>{data.current_temp} °C</td>
-              </tr>
-              <tr>
-                <td>Last updated</td>
-                <td>{data.last_updated}</td>
-              </tr>
-              <tr>
-                <td>Range</td>
-                <td>{Math.min(...data.values).toFixed(2)} °C – {Math.max(...data.values).toFixed(2)} °C</td>
-              </tr>
-              <tr>
-                <td>Date span</td>
-                <td>{data.labels[0]} → {data.labels[data.labels.length - 1]}</td>
-              </tr>
-            </>}
-          </tbody>
-        </table>
-      </div>
-    </div>
+    <DashboardLayout>
+      <DashboardHeader />
+      <MetricsGrid>
+        <MetricCard
+          title="Ambient Temperature"
+          value={data.current_temp.toFixed(2)}
+          unit="°C"
+          subtitle={`Last recorded ${timeSince(data.last_updated)}`}
+          status={getTempStatus(data.current_temp)}
+        />
+        <MetricCard
+          title="Last Sync"
+          value={timePart}
+          unit=""
+          subtitle={datePart}
+          status="nominal"
+        />
+      </MetricsGrid>
+      <AnalyticsContainer>
+        <p style={{ color: 'var(--color-text-secondary)', fontSize: '0.875rem' }}>
+          Chart canvas renders in Milestone 3 — {data.values.length} hourly data points ready.
+        </p>
+      </AnalyticsContainer>
+    </DashboardLayout>
   )
 }
 
