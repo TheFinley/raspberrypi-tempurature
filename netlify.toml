@@ -1,5 +1,5 @@
 [build]
   base    = "dashboard"
   command = "npm run build"
-  publish = "dashboard/dist"
+  publish = "dist"
   ignore  = "git diff --quiet HEAD^ HEAD -- dashboard/"
