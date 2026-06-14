@@ -260,4 +260,12 @@ The `ignore` command is the key to credit protection. `git diff --quiet` exits 0
 
 **To deploy a dashboard change:** edit files under `dashboard/`, commit and push from `D:\Projects\raspberrypi-temperature`. Netlify will detect the `dashboard/` change, run `npm run build`, and deploy automatically.
 
+**Pushing from Windows — always pull first:** `pushTelemetry.py` commits `data/recent_temp.json` to the remote every 5 minutes. Any `git push` from Windows will be rejected if a data commit arrived since your last pull. The fix is always the same:
+
+```powershell
+git pull; git push
+```
+
+Note: PowerShell does not support `&&` (bash syntax). Use `;` to chain commands, or run them on separate lines.
+
 **Build credits:** Netlify starter plan includes a monthly credit allowance. Credits refresh on the 8th of each month. Only commits that change `dashboard/` consume credits.
