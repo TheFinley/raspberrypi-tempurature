@@ -4,6 +4,7 @@ import DashboardHeader from './components/DashboardHeader.jsx'
 import MetricsGrid from './components/MetricsGrid.jsx'
 import MetricCard from './components/MetricCard.jsx'
 import AnalyticsContainer from './components/AnalyticsContainer.jsx'
+import TelemetryChart from './components/TelemetryChart.jsx'
 
 function getTempStatus(temp) {
   if (temp > 30) return 'critical'
@@ -58,9 +59,7 @@ function App() {
         />
       </MetricsGrid>
       <AnalyticsContainer>
-        <p style={{ color: 'var(--color-text-secondary)', fontSize: '0.875rem' }}>
-          Chart canvas renders in Milestone 3 — {data.values.length} hourly data points ready.
-        </p>
+        <TelemetryChart labels={data.labels} dataPoints={data.values} />
       </AnalyticsContainer>
     </DashboardLayout>
   )

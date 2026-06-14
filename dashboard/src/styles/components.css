@@ -129,6 +129,12 @@
   margin-bottom: var(--spacing-md);
 }
 
+/* ── Telemetry Chart ── */
+.telemetry-chart {
+  position: relative;
+  height: 320px;
+}
+
 /* ── Responsive ── */
 @media (max-width: 600px) {
   .dashboard-layout { padding: var(--spacing-md); }
