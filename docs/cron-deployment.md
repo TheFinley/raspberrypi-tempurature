@@ -3,8 +3,8 @@
 ## Crontab Overview
 
 ```
-# Every 1 minute — sensor reads
-* * * * *   readTemp-v4.py   → temperature.log
+# Every 2 minutes — sensor reads
+*/2 * * * * readTemp-v4.py   → temperature.log
 
 # Every 5 minutes — processing & publishing
 */5 * * * * createChart-v3.py         → temperature.png
@@ -37,8 +37,10 @@ Reads the DS18B20 temperature sensor via the 1-Wire kernel interface and prints 
 
 **Cron entry:**
 ```
-* * * * * cd ~/readtemp/ && /usr/bin/python3 ~/readtemp/readTemp-v4.py >> ~/readtemp/temperature.log
+*/2 * * * * cd ~/readtemp/ && /usr/bin/python3 ~/readtemp/readTemp-v4.py >> ~/readtemp/temperature.log
 ```
+
+**Note on 2-minute interval:** Changed from 1 minute to reduce writes and keep `temperature.log` below the 1MB logrotate threshold for approximately 40 days per file. All downstream consumers are interval-agnostic: `pushTelemetry.py` uses `resample('1h').mean()`, `createChart-v3.py` plots every reading (visually identical at 30-day scale), and `sendEmailAndTemp-v4.py` reads only the last row.
 
 **Changes from v3:**
 
@@ -55,12 +57,34 @@ Reads the DS18B20 temperature sensor via the 1-Wire kernel interface and prints 
 
 ---
 
+### readtemp_utils.py
+
+Shared utility module imported by `createChart-v3.py`, `createHtmlAndUpload-v6.py`, and `sendEmailAndTemp-v4.py`. Eliminates the identical `get_data()` that was duplicated across all three scripts.
+
+**Functions:**
+
+`get_data(file_path)` — reads a single temperature log file. Parses as CSV with columns `date` and `temp`, converts `date` to `datetime` with format `%Y/%m/%d %H:%M:%S`, sets date as the index, returns the DataFrame.
+
+`get_all_data(log_dir, days=30)` — reads all temperature log files across the active log and all rotated files, concatenates them, and returns only the last N days. Steps:
+1. Globs `log_dir/temperature.log*` (active file and any same-directory rotations)
+2. Globs `log_dir/rotated/temperature.log*` (rotated subdirectory)
+3. Deduplicates paths, raises `RuntimeError` if none found
+4. Calls `get_data()` on each file, concatenates results
+5. Sorts by date index, drops duplicate timestamps (can occur at rotation boundaries)
+6. Filters to `days` most recent days and returns
+
+The `days` parameter defaults to 30. Filtering before returning means pandas never holds more than 30 days in memory regardless of how many rotated files accumulate.
+
+**Not run by cron directly** — imported as a module only.
+
+---
+
 ### createChart-v3.py
 
-Reads `temperature.log`, cleans 85°C error readings, and generates a matplotlib line chart saved as `temperature.png`.
+Reads all temperature log files (active and rotated), cleans 85°C error readings, and generates a matplotlib line chart saved as `temperature.png`.
 
 **What it does:**
-1. Loads entire `temperature.log` into a pandas DataFrame
+1. Calls `get_all_data()` from `readtemp_utils` — globs `temperature.log*` in `~/readtemp/` and `~/readtemp/rotated/`, concatenates, deduplicates, and filters to the last 30 days
 2. Replaces 85.0°C error readings with linear interpolation via `replace(85.0, pd.NA).interpolate()`
 3. Plots temperature over time using matplotlib (non-interactive `Agg` backend)
 4. Saves to `/home/pi/readtemp/temperature.png`
@@ -84,6 +108,7 @@ Reads `temperature.log`, cleans 85°C error readings, and generates a matplotlib
 | `df.plot(x='date', ...)` passed a column name that is also the index — redundant | Removed `x='date'`; index is used automatically |
 | `print()` calls required manual `datetime.now()` for timestamps | Replaced with `logging.basicConfig(stream=sys.stdout)` — timestamps added automatically |
 | File paths hardcoded inside functions and `plt.savefig()` call | Extracted to `LOG_FILE` and `OUT_FILE` constants at top of file |
+| `get_data()` defined locally, read only the active `temperature.log` | Replaced with `get_all_data(LOG_DIR)` from `readtemp_utils`; reads active log and all rotated files, returns last 30 days. `LOG_FILE` constant replaced with `LOG_DIR`. |
 
 ---
 
@@ -92,7 +117,7 @@ Reads `temperature.log`, cleans 85°C error readings, and generates a matplotlib
 Generates a simple HTML page showing current temperature and the chart image, then uploads two files to the UofT FTP server.
 
 **What it does:**
-1. Reads last row of `temperature.log` for current date and temp
+1. Calls `get_data()` from `readtemp_utils` to read the last row of `temperature.log` for current date and temp
 2. Writes `index.html` to `/home/pi/readtemp/index.html`
 3. FTPs `index.html` and `temperature.png` to `individual.utoronto.ca`
 
@@ -120,6 +145,7 @@ Generates a simple HTML page showing current temperature and the chart image, th
 | `print()` with manual `datetime.now()` | Replaced with `logging.basicConfig(stream=sys.stdout)` |
 | FTP uploads had no error handling — failed upload left connection open | FTP block wrapped in `try/except`; `logging.exception()` captures traceback; `ftp.quit()` called at end of success path only |
 | `ftp = FTP(FTP_HOST)` outside `try` — a failed `ftp.login()` would trigger `finally: ftp.quit()` on an unauthenticated connection, potentially masking the login error with a second exception | Moved `FTP(FTP_HOST)` inside `try`; dropped `finally` — `ftp.quit()` only runs when all uploads succeed |
+| `get_data()` defined locally | Moved to `readtemp_utils`; imported from there. Behaviour unchanged — only needs the last row of the active log. |
 
 ---
 
@@ -165,7 +191,7 @@ The live data pipeline for the React dashboard. Reads the full temperature log h
 Sends a daily email with the current temperature and `temperature.png` as an attachment.
 
 **What it does:**
-1. Reads last row of `temperature.log` for current date and temp
+1. Calls `get_data()` from `readtemp_utils` to read the last row of `temperature.log` for current date and temp
 2. Composes a MIME email with subject `Temperature: <date> - <temp> C`
 3. Attaches `temperature.png`
 4. Sends via Gmail SMTP SSL on port 465
@@ -193,24 +219,65 @@ Sends a daily email with the current temperature and `temperature.png` as an att
 | `smtplib.SMTP_SSL()` omitted port; `context` created but not passed | Now `SMTP_SSL(SMTP_HOST, SMTP_PORT, context=context)` — explicit port and SSL context used |
 | `server.login/sendmail/quit` called bare — connection left open if `sendmail()` raises | Replaced with `with smtplib.SMTP_SSL(...) as server` context manager |
 | `print()` with manual `datetime.now()` | Replaced with `logging.basicConfig(stream=sys.stdout)` |
+| `get_data()` defined locally | Moved to `readtemp_utils`; imported from there. Behaviour unchanged — only needs the last row of the active log. |
+
+---
+
+## Log Rotation
+
+Two logrotate configs manage log files automatically. Both move rotated files to `~/readtemp/rotated/`.
+
+### /etc/logrotate.d/readtemp-data — temperature.log
+
+- **Schedule:** daily check; rotation only occurs when the file reaches 1MB
+- **At 2-minute polling:** ~25KB/day, threshold hit approximately every 40 days
+- **Compression:** none — all rotated files stay plain text CSV, directly readable by pandas, Excel, or any text editor
+- **Retention:** unlimited — `rotate 0` keeps all rotated files forever. No data is ever deleted.
+- **Rotated files:** `temperature.log.1`, `temperature.log.2`, etc. in `rotated/`
+
+### /etc/logrotate.d/readtemp-scripts — script logs
+
+Covers: `1-createChart-v3.log`, `2-createHtmlAndUpload-v6.log`, `4-sendEmailAndTemp-v4.log`, `5-pushTelemetry.log`
+
+- **Schedule:** weekly
+- **Retention:** 4 rotations (~1 month). The fifth rotation deletes the oldest. Script logs beyond one month have no debugging value.
+- **Compression:** gzip on rotation; `delaycompress` keeps `.log.1` uncompressed for quick inspection of last week's output
+- **Rotated files:** e.g. `1-createChart-v3.log.1` (readable), `1-createChart-v3.log.2.gz` (compressed) in `rotated/`
+
+### rotated/ directory layout over time
+
+```
+~/readtemp/rotated/
+  temperature.log.1          ← most recent data rotation, plain text
+  temperature.log.2          ← older rotations, kept forever
+  temperature.log.3
+  ...
+  1-createChart-v3.log.1     ← last week, uncompressed
+  1-createChart-v3.log.2.gz  ← older weeks, compressed
+  1-createChart-v3.log.3.gz
+  1-createChart-v3.log.4.gz  ← oldest kept; next rotation deletes this
+  2-createHtmlAndUpload-v6.log.1
+  2-createHtmlAndUpload-v6.log.2.gz
+  ...
+```
 
 ---
 
 ## Log Files
 
-| Log file | Script | Purpose |
-|---|---|---|
-| temperature.log | readTemp-v4.py | Raw DS18B20 readings (appended, rotated) |
-| 1-createChart-v3.log | createChart-v3.py | Chart generation output |
-| 2-createHtmlAndUpload-v6.log | createHtmlAndUpload-v6.py | FTP upload output |
-| 4-sendEmailAndTemp-v4.log | sendEmailAndTemp-v4.py | Email send output |
-| 5-pushTelemetry.log | pushTelemetry.py | GitHub push output |
+| Log file | Script | Retention | Notes |
+|---|---|---|---|
+| temperature.log | readTemp-v4.py | Forever | Active file; rotated to `rotated/` at 1MB, plain text |
+| 1-createChart-v3.log | createChart-v3.py | ~1 month | Weekly rotation, 4 kept, compressed |
+| 2-createHtmlAndUpload-v6.log | createHtmlAndUpload-v6.py | ~1 month | Weekly rotation, 4 kept, compressed |
+| 4-sendEmailAndTemp-v4.log | sendEmailAndTemp-v4.py | ~1 month | Weekly rotation, 4 kept, compressed |
+| 5-pushTelemetry.log | pushTelemetry.py | ~1 month | Weekly rotation, 4 kept, compressed |
 
 ## Data Flow Diagram
 
 ```
 DS18B20 sensor
-    │ every 1 min
+    │ every 2 min
     ▼
 temperature.log  ──────────────────────────────────────────────────────┐
     │                                                                   │
