@@ -1,0 +1,19 @@
+:root {
+  --color-bg:              #0d1117;
+  --color-surface:         #161b22;
+  --color-border:          #30363d;
+  --color-text-primary:    #e6edf3;
+  --color-text-secondary:  #8b949e;
+  --color-accent:          #58a6ff;
+  --color-nominal:         #3fb950;
+  --color-warning:         #d29922;
+  --color-critical:        #f85149;
+
+  --spacing-sm:  0.5rem;
+  --spacing-md:  1rem;
+  --spacing-lg:  1.5rem;
+  --spacing-xl:  2rem;
+
+  --radius: 6px;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+}

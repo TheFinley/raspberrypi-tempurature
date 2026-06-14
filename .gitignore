@@ -1,0 +1,22 @@
+# Pi scripts (contain credentials — kept as local backup only)
+*.py
+*.bat
+
+# Pi-generated files
+*.log
+*.log.*
+/index.html
+tempurature.png
+cputempurature.png
+
+# Pi archive
+Archive/
+python2_scripts/
+
+# Node / React
+dashboard/node_modules/
+dashboard/dist/
+
+# OS
+.DS_Store
+Thumbs.db
