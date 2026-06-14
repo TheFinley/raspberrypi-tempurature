@@ -4,10 +4,10 @@
 
 ```
 # Every 1 minute — sensor reads
-* * * * *   readTemp-v4.py   → tempurature.log
+* * * * *   readTemp-v4.py   → temperature.log
 
 # Every 5 minutes — processing & publishing
-*/5 * * * * createChart-v3.py         → tempurature.png
+*/5 * * * * createChart-v3.py         → temperature.png
 */5 * * * * createHtmlAndUpload-v6.py → index.html + FTP upload
 */5 * * * * pushTelemetry.py          → data/recent_temp.json on GitHub
 
@@ -21,7 +21,7 @@
 
 ### readTemp-v4.py
 
-Reads the DS18B20 temperature sensor via the 1-Wire kernel interface and prints one CSV line to stdout. Cron redirects stdout to `tempurature.log`.
+Reads the DS18B20 temperature sensor via the 1-Wire kernel interface and prints one CSV line to stdout. Cron redirects stdout to `temperature.log`.
 
 **What it does:**
 1. Loads kernel modules `w1-gpio` and `w1-therm` via `/usr/sbin/modprobe`
@@ -37,7 +37,7 @@ Reads the DS18B20 temperature sensor via the 1-Wire kernel interface and prints 
 
 **Cron entry:**
 ```
-* * * * * cd ~/readtemp/ && /usr/bin/python3 ~/readtemp/readTemp-v4.py >> ~/readtemp/tempurature.log
+* * * * * cd ~/readtemp/ && /usr/bin/python3 ~/readtemp/readTemp-v4.py >> ~/readtemp/temperature.log
 ```
 
 **Changes from v3:**
@@ -57,13 +57,13 @@ Reads the DS18B20 temperature sensor via the 1-Wire kernel interface and prints 
 
 ### createChart-v3.py
 
-Reads `tempurature.log`, cleans 85°C error readings, and generates a matplotlib line chart saved as `tempurature.png`.
+Reads `temperature.log`, cleans 85°C error readings, and generates a matplotlib line chart saved as `temperature.png`.
 
 **What it does:**
-1. Loads entire `tempurature.log` into a pandas DataFrame
+1. Loads entire `temperature.log` into a pandas DataFrame
 2. Replaces 85.0°C error readings with linear interpolation via `replace(85.0, pd.NA).interpolate()`
 3. Plots temperature over time using matplotlib (non-interactive `Agg` backend)
-4. Saves to `/home/pi/readtemp/tempurature.png`
+4. Saves to `/home/pi/readtemp/temperature.png`
 
 **Log:** `1-createChart-v3.log`
 
@@ -92,9 +92,9 @@ Reads `tempurature.log`, cleans 85°C error readings, and generates a matplotlib
 Generates a simple HTML page showing current temperature and the chart image, then uploads two files to the UofT FTP server.
 
 **What it does:**
-1. Reads last row of `tempurature.log` for current date and temp
+1. Reads last row of `temperature.log` for current date and temp
 2. Writes `index.html` to `/home/pi/readtemp/index.html`
-3. FTPs `index.html` and `tempurature.png` to `individual.utoronto.ca`
+3. FTPs `index.html` and `temperature.png` to `individual.utoronto.ca`
 
 **FTP destination:** `individual.utoronto.ca` (UofT personal web space)
 
@@ -125,10 +125,12 @@ Generates a simple HTML page showing current temperature and the chart image, th
 
 ### pushTelemetry.py
 
-The live data pipeline for the React dashboard. Reads the full temperature log history, downsamples to 720 hourly averages (30 days), and commits `data/recent_temp.json` to the GitHub repository. The Netlify-hosted React dashboard fetches this file every 5 minutes.
+The live data pipeline for the React dashboard. Reads the full temperature log history, downsamples to 720 hourly averages (30 days), and commits `data/recent_temp.json` to the GitHub repository via the Contents API. The Netlify-hosted React dashboard fetches this file every 5 minutes.
+
+**Why GitHub Contents API instead of a direct Netlify deploy:** Pushing via the GitHub API commits only the JSON data file. Netlify's `netlify.toml` contains an ignore rule that cancels any build where `dashboard/` hasn't changed — so these 288 daily data commits trigger no Netlify builds and consume no build credits. See [Dashboard & Netlify](#dashboard--netlify) below.
 
 **What it does:**
-1. Reads and concatenates all `tempurature.log*` files (current + rotated)
+1. Reads and concatenates all `temperature.log*` files (current + rotated)
 2. Parses timestamps, removes duplicates, interpolates 85°C errors
 3. Filters to last 30 days, resamples to 1-hour averages via `pandas.resample('1h').mean()`
 4. Takes the last 720 hourly buckets
@@ -160,12 +162,12 @@ The live data pipeline for the React dashboard. Reads the full temperature log h
 
 ### sendEmailAndTemp-v4.py
 
-Sends a daily email with the current temperature and `tempurature.png` as an attachment.
+Sends a daily email with the current temperature and `temperature.png` as an attachment.
 
 **What it does:**
-1. Reads last row of `tempurature.log` for current date and temp
-2. Composes a MIME email with subject `Tempurature: <date> - <temp> C`
-3. Attaches `tempurature.png` (sent as `temperature.png` — see note below)
+1. Reads last row of `temperature.log` for current date and temp
+2. Composes a MIME email with subject `Temperature: <date> - <temp> C`
+3. Attaches `temperature.png`
 4. Sends via Gmail SMTP SSL on port 465
 
 **Sender:** `<sender-email>`
@@ -192,15 +194,13 @@ Sends a daily email with the current temperature and `tempurature.png` as an att
 | `server.login/sendmail/quit` called bare — connection left open if `sendmail()` raises | Replaced with `with smtplib.SMTP_SSL(...) as server` context manager |
 | `print()` with manual `datetime.now()` | Replaced with `logging.basicConfig(stream=sys.stdout)` |
 
-> **Note — attachment filename:** The on-disk file is `tempurature.png` (misspelled) but the email attachment is named `temperature.png` (correct spelling). This pre-existing inconsistency is left as-is pending a future rename of the on-disk file.
-
 ---
 
 ## Log Files
 
 | Log file | Script | Purpose |
 |---|---|---|
-| tempurature.log | readTemp-v4.py | Raw DS18B20 readings (appended, rotated) |
+| temperature.log | readTemp-v4.py | Raw DS18B20 readings (appended, rotated) |
 | 1-createChart-v3.log | createChart-v3.py | Chart generation output |
 | 2-createHtmlAndUpload-v6.log | createHtmlAndUpload-v6.py | FTP upload output |
 | 4-sendEmailAndTemp-v4.log | sendEmailAndTemp-v4.py | Email send output |
@@ -212,19 +212,52 @@ Sends a daily email with the current temperature and `tempurature.png` as an att
 DS18B20 sensor
     │ every 1 min
     ▼
-tempurature.log  ──────────────────────────────────────────────────────┐
+temperature.log  ──────────────────────────────────────────────────────┐
     │                                                                   │
     │ every 5 min                                                       │ every 5 min
     ▼                                                                   ▼
 createChart-v3.py                                              pushTelemetry.py
     │                                                                   │
-    ▼                                                                   ▼
-tempurature.png ──► createHtmlAndUpload-v6.py          data/recent_temp.json
+    ▼                                                                   │  GitHub Contents API
+temperature.png ──► createHtmlAndUpload-v6.py          data/recent_temp.json
                           │                               (GitHub repo)
                           ▼                                      │
                    individual.utoronto.ca              raw.githubusercontent.com
                    (FTP web page)                              │
                                                                ▼
-                                                    React dashboard (Netlify)
-                                                    fetched by browser every 5 min
+                                              React dashboard (raspberrypi-temperature.netlify.app)
+                                              browser fetches JSON every 5 min
+                                              Netlify builds only when dashboard/ changes
 ```
+
+---
+
+## Dashboard & Netlify
+
+**URL:** `https://raspberrypi-temperature.netlify.app`
+
+**Stack:** Vite + React 18 + Chart.js, hosted on Netlify, connected to the `TheFinley/raspberrypi-temperature` GitHub repo.
+
+**Key source files (in `dashboard/`):**
+
+| File | Purpose |
+|---|---|
+| `src/hooks/useTelemetry.js` | Fetches `data/recent_temp.json` from `raw.githubusercontent.com` every 5 min |
+| `src/components/TelemetryChart.jsx` | Chart.js canvas via `useRef` — bypasses React re-renders for smooth updates |
+| `src/components/MetricCard.jsx` | Current temp + last sync time, colour-coded status |
+
+**netlify.toml (repo root):**
+
+```toml
+[build]
+  base    = "dashboard"
+  command = "npm run build"
+  publish = "dist"
+  ignore  = "git diff --quiet HEAD^ HEAD -- dashboard/"
+```
+
+The `ignore` command is the key to credit protection. `git diff --quiet` exits 0 (no diff) when `dashboard/` is unchanged, which tells Netlify to cancel the build immediately — typically in under 2 seconds with no build minutes consumed. `pushTelemetry.py` commits 288 times a day; without this rule each commit would trigger a full Netlify build.
+
+**To deploy a dashboard change:** edit files under `dashboard/`, commit and push from `D:\Projects\raspberrypi-temperature`. Netlify will detect the `dashboard/` change, run `npm run build`, and deploy automatically.
+
+**Build credits:** Netlify starter plan includes a monthly credit allowance. Credits refresh on the 8th of each month. Only commits that change `dashboard/` consume credits.

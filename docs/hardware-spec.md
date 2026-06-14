@@ -75,8 +75,8 @@ combined['temp'].interpolate(inplace=True)
 
 | Path | Purpose |
 |---|---|
-| /home/pi/readtemp/tempurature.log | DS18B20 ambient temp log (CSV, 1-min cadence) |
-| /home/pi/readtemp/tempurature.png | Ambient temp chart (regenerated every 5 min) |
+| /home/pi/readtemp/temperature.log | DS18B20 ambient temp log (CSV, 1-min cadence) |
+| /home/pi/readtemp/temperature.png | Ambient temp chart (regenerated every 5 min) |
 | /home/pi/readtemp/index.html | FTP-uploaded page for individual.utoronto.ca |
 
 Log file format:
